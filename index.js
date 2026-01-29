@@ -6,10 +6,16 @@ import OpenAI from "openai";
 dotenv.config();
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"],
+}));
 app.use(express.json());
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+app.options("/chat-stream", cors());
 
 // Streaming chat
 app.post("/chat-stream", async (req, res) => {
