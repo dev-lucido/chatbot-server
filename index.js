@@ -162,6 +162,10 @@ const FAQ = [
     question: "How does SANASA Development Bank protect customer data?",
     answer: "The bank follows strict data protection, confidentiality, and regulatory compliance standards.",
   },
+  {
+    question: "SDB website",
+    answer: "https://www.sdb.lk/en/",
+  },
 ];
 
 
