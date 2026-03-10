@@ -46,7 +46,7 @@
 
 //     for await (const chunk of stream) {
 //       const content = chunk.choices[0]?.delta?.content;
-      
+
 //       if (content) {
 //         // Escape newlines so they're preserved in the SSE format
 //         const escapedContent = content.replace(/\n/g, '\\n');
@@ -67,20 +67,7 @@
 //   console.log("Server running on port", process.env.PORT || 3001);
 // });
 
-
-
-
-
-
-
-
-
-
-
-
-
 // SDB Bank Chatbot Server =============================================================================================================
-
 
 // import express from "express";
 // import cors from "cors";
@@ -168,7 +155,6 @@
 //   },
 // ];
 
-
 // const app = express();
 
 // app.use(cors({
@@ -217,7 +203,7 @@
 
 //     for await (const chunk of stream) {
 //       const content = chunk.choices[0]?.delta?.content;
-      
+
 //       if (content) {
 //         // Escape newlines so they're preserved in the SSE format
 //         const escapedContent = content.replace(/\n/g, '\\n');
@@ -238,35 +224,91 @@
 //   console.log("Server running on port", process.env.PORT || 3001);
 // });
 
+// General-purpose Chatbot Server OpenAI =============================================================================================================
 
+// import express from "express";
+// import cors from "cors";
+// import dotenv from "dotenv";
+// import OpenAI from "openai";
 
+// dotenv.config();
 
-// General-purpose Chatbot Server =============================================================================================================
+// const app = express();
 
+// app.use(
+//   cors({
+//     origin: "*",
+//     methods: ["GET", "POST", "OPTIONS"],
+//     allowedHeaders: ["Content-Type"],
+//   })
+// );
+// app.use(express.json());
+
+// const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// app.options("/chat-stream", cors());
+
+// // Streaming chat
+// app.post("/chat-stream", async (req, res) => {
+//   const { message, history = [] } = req.body;
+
+//   res.setHeader("Content-Type", "text/event-stream");
+//   res.setHeader("Cache-Control", "no-cache");
+//   res.setHeader("Connection", "keep-alive");
+
+//   try {
+//     const stream = await openai.chat.completions.create({
+//       model: "gpt-4o-mini", // ✅ Fixed: gpt-5-nano is not a valid model
+//       messages: [
+//         {
+//           role: "system",
+//           content: `You are a helpful and friendly assistant. Be clear, concise, and warm in your responses.`,
+//         },
+//         ...history,
+//         { role: "user", content: message },
+//       ],
+//       stream: true,
+//     });
+
+//     for await (const chunk of stream) {
+//       const content = chunk.choices[0]?.delta?.content;
+
+//       if (content) {
+//         // Escape newlines so they're preserved in SSE format
+//         const escapedContent = content.replace(/\n/g, "\\n");
+//         res.write(`data: ${escapedContent}\n\n`);
+//       }
+//     }
+
+//     res.write("data: [DONE]\n\n");
+//     res.end();
+//   } catch (err) {
+//     console.error(err);
+//     res.write("data: [ERROR]\n\n");
+//     res.end();
+//   }
+// });
+
+// app.listen(process.env.PORT || 3001, () => {
+//   console.log("Server running on port", process.env.PORT || 3001);
+// });
+
+// General-purpose Chatbot Server Gemini =============================================================================================================
 
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 dotenv.config();
 
 const app = express();
-
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type"],
-  })
-);
+app.use(cors());
 app.use(express.json());
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Initialize Gemini with your API Key
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-app.options("/chat-stream", cors());
-
-// Streaming chat
 app.post("/chat-stream", async (req, res) => {
   const { message, history = [] } = req.body;
 
@@ -275,38 +317,43 @@ app.post("/chat-stream", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
 
   try {
-    const stream = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // ✅ Fixed: gpt-5-nano is not a valid model
-      messages: [
-        {
-          role: "system",
-          content: `You are a helpful and friendly assistant. Be clear, concise, and warm in your responses.`,
-        },
-        ...history,
-        { role: "user", content: message },
-      ],
-      stream: true,
-    });
+    // Use Gemini 3 Flash for fast, modern responses
+    const model = genAI.getGenerativeModel(
+      {
+        model: "gemini-2.5-flash",
+        systemInstruction:
+          "You are a Sri Lankan naming expert. If the user selects English, provide modern Western/International names popular in Sri Lanka. If they select Sinhala or Tamil, provide names in those native scripts with transliterations. Never mix them unless asked.",
+      },
+      { apiVersion: "v1beta" },
+    );
 
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content;
+    // Format history for Gemini SDK [{ role: 'user'|'model', parts: [{ text: '...' }] }]
+    const formattedHistory = history.map((msg) => ({
+      role: msg.role === "assistant" ? "model" : "user",
+      parts: [{ text: msg.content }],
+    }));
 
-      if (content) {
-        // Escape newlines so they're preserved in SSE format
-        const escapedContent = content.replace(/\n/g, "\\n");
-        res.write(`data: ${escapedContent}\n\n`);
-      }
+    const chat = model.startChat({ history: formattedHistory });
+    const result = await chat.sendMessageStream(message);
+
+    for await (const chunk of result.stream) {
+      const chunkText = chunk.text();
+      // Escape newlines for SSE format compatibility
+      const escaped = chunkText.replace(/\n/g, "\\n");
+      res.write(`data: ${escaped}\n\n`);
     }
 
     res.write("data: [DONE]\n\n");
     res.end();
   } catch (err) {
-    console.error(err);
+    console.error("Gemini Error:", err);
     res.write("data: [ERROR]\n\n");
     res.end();
   }
 });
 
+app.get("/health", (_, res) => res.json({ status: "ok" }));
+
 app.listen(process.env.PORT || 3001, () => {
-  console.log("Server running on port", process.env.PORT || 3001);
+  console.log("Server running on port 3001");
 });
